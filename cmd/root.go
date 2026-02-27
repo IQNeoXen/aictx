@@ -47,6 +47,7 @@ func init() {
 	rootCmd.AddCommand(currentCmd)
 	rootCmd.AddCommand(discoverCmd)
 	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(completionCmd)
 }
 
 func rootRun(cmd *cobra.Command, args []string) error {
