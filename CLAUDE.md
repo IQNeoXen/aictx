@@ -1,6 +1,6 @@
 # aictx — AI Context Switcher
 
-A kubectx-style CLI tool for switching AI tool configurations (API keys, models, endpoints).
+Context switcher for AI tool configurations, inspired by kubectx.
 
 ## Build & Run
 

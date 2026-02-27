@@ -204,8 +204,6 @@ API keys are stored in the OS keychain — never in plain text on disk:
 
 The config file (`~/.config/aictx/config.yaml`) stores only metadata: context names, endpoints, models, and options.
 
-Existing installs that had API keys in `config.yaml` are migrated to the keychain automatically on first run.
-
 ## Config
 
 Stored at `~/.config/aictx/config.yaml` (API keys are in the keychain, not here):

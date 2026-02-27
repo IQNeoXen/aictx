@@ -2,6 +2,9 @@
 aictx
 dist/
 
+# Local issues / tickets (not checked in)
+.issues/
+
 # IDE
 .idea/
 .vscode/

@@ -47,7 +47,7 @@ brews:
       name: homebrew-aictx
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/aictx"
-    description: "kubectx-style switcher for AI tool configurations (API keys, models, endpoints)"
+    description: "Context switcher for AI tool configurations, inspired by kubectx."
     license: "MIT"
     install: |
       bin.install "aictx"
