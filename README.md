@@ -19,8 +19,23 @@ Each target translates abstract provider settings into its own config format. PR
 
 ## Install
 
+Requires [Go](https://go.dev/doc/install) (1.21+).
+
 ```bash
 go install github.com/IQNeoXen/aictx@latest
+```
+
+`go install` places the binary in `~/go/bin`. If that's not in your PATH, add it:
+
+```bash
+# Bash
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+
+# Zsh
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+# Fish
+fish_add_path ~/go/bin
 ```
 
 Or build from source:
