@@ -38,7 +38,6 @@ release:
   github:
     owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
     name: aictx
-  generate_release_notes: true
 
 brews:
   - name: aictx
