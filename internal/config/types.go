@@ -9,10 +9,11 @@ type Context struct {
 
 // TargetEntry specifies a target and its configuration.
 type TargetEntry struct {
-	ID            string   `yaml:"id"`
-	Provider      Provider `yaml:"provider,omitempty"`
-	Options       Options  `yaml:"options,omitempty"`
-	HasKeyringKey bool     `yaml:"hasKeyringKey,omitempty"`
+	ID            string            `yaml:"id"`
+	Provider      Provider          `yaml:"provider,omitempty"`
+	Options       Options           `yaml:"options,omitempty"`
+	Env           map[string]string `yaml:"env,omitempty"`
+	HasKeyringKey bool              `yaml:"hasKeyringKey,omitempty"`
 }
 
 // Provider holds abstract connection settings that each target translates
