@@ -83,6 +83,10 @@ func (t *Target) Apply(te config.TargetEntry) error {
 	if te.Options.DisableBetas != nil && *te.Options.DisableBetas {
 		env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
 	}
+	// Merge custom env vars from the TargetEntry
+	for k, v := range te.Env {
+		env[k] = v
+	}
 
 	envVars := buildEnvVarsArray(env)
 	if len(envVars) > 0 {
@@ -147,6 +151,12 @@ func (t *Target) Discover() (*config.TargetEntry, error) {
 					b := true
 					te.Options.DisableBetas = &b
 				}
+			default:
+				// Collect unrecognized entries as custom env vars
+				if te.Env == nil {
+					te.Env = map[string]string{}
+				}
+				te.Env[name] = val
 			}
 			return true
 		})

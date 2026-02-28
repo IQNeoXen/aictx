@@ -48,6 +48,7 @@ func init() {
 	rootCmd.AddCommand(discoverCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(envCmd)
 }
 
 func rootRun(cmd *cobra.Command, args []string) error {
@@ -182,6 +183,9 @@ func claudecliAppliedEnvKeys(te config.TargetEntry) []string {
 	}
 	if te.Options.DisableBetas != nil && *te.Options.DisableBetas {
 		keys = append(keys, "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
+	}
+	for k := range te.Env {
+		keys = append(keys, k)
 	}
 	return keys
 }

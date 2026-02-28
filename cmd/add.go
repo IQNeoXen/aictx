@@ -21,6 +21,7 @@ var (
 	addThinking    bool
 	addNoTelemetry bool
 	addNoBetas     bool
+	addEnv         []string
 )
 
 var addCmd = &cobra.Command{
@@ -40,6 +41,7 @@ func init() {
 	addCmd.Flags().BoolVar(&addThinking, "thinking", false, "Enable always thinking")
 	addCmd.Flags().BoolVar(&addNoTelemetry, "no-telemetry", false, "Disable telemetry")
 	addCmd.Flags().BoolVar(&addNoBetas, "no-betas", false, "Disable experimental betas")
+	addCmd.Flags().StringArrayVar(&addEnv, "env", nil, "Extra environment variable as KEY=VALUE (repeatable)")
 }
 
 func addRun(cmd *cobra.Command, args []string) error {
@@ -58,7 +60,7 @@ func addRun(cmd *cobra.Command, args []string) error {
 
 	flagsProvided := len(addTargets) > 0 || addDesc != "" || addEndpoint != "" ||
 		addAPIKey != "" || addModel != "" || addSmallModel != "" ||
-		addThinking || addNoTelemetry || addNoBetas
+		addThinking || addNoTelemetry || addNoBetas || len(addEnv) > 0
 
 	if flagsProvided {
 		ctx.Description = addDesc
@@ -84,6 +86,19 @@ func addRun(cmd *cobra.Command, args []string) error {
 			opts.DisableBetas = &b
 		}
 
+		// Parse --env KEY=VALUE flags
+		var envMap map[string]string
+		for _, e := range addEnv {
+			idx := strings.Index(e, "=")
+			if idx <= 0 {
+				return fmt.Errorf("invalid --env value %q: expected KEY=VALUE", e)
+			}
+			if envMap == nil {
+				envMap = map[string]string{}
+			}
+			envMap[e[:idx]] = e[idx+1:]
+		}
+
 		for _, tid := range addTargets {
 			if target.ByID(tid) == nil {
 				return fmt.Errorf("unknown target %q. Available: %v", tid, target.IDs())
@@ -92,6 +107,7 @@ func addRun(cmd *cobra.Command, args []string) error {
 				ID:       tid,
 				Provider: prov,
 				Options:  opts,
+				Env:      envMap,
 			})
 		}
 	} else {
@@ -154,6 +170,19 @@ func addRun(cmd *cobra.Command, args []string) error {
 			if yesNo(scanner, "  Disable experimental betas?", false) {
 				b := true
 				te.Options.DisableBetas = &b
+			}
+
+			fmt.Println("Custom env vars (leave name empty to finish):")
+			for {
+				key := prompt(scanner, "  Name")
+				if key == "" {
+					break
+				}
+				value := prompt(scanner, "  Value")
+				if te.Env == nil {
+					te.Env = map[string]string{}
+				}
+				te.Env[key] = value
 			}
 
 			ctx.Targets = append(ctx.Targets, te)

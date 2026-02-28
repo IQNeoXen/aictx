@@ -101,6 +101,7 @@ aictx
 | `aictx show [name]`        | Show context details (defaults to current)               |
 | `aictx current`            | Print the current context name                           |
 | `aictx discover`           | Detect config from installed tools and save as a context |
+| `aictx env <ctx> <target>` | Manage custom env vars for a target in a context         |
 | `aictx completion <shell>` | Print a shell completion script                          |
 
 ## Switching Contexts
@@ -146,8 +147,12 @@ aictx add work-project \
   --model claude-opus-4-6 \
   --small-model claude-haiku-4-5 \
   --thinking \
-  --no-telemetry
+  --no-telemetry \
+  --env OPENAI_API_VERSION=2024-02-01 \
+  --env MY_CUSTOM_FLAG=enabled
 ```
+
+The `--env` flag is repeatable and stores arbitrary environment variables alongside the context. They are applied to the target's config on switch and cleaned up on the next switch.
 
 **Interactively** (run `aictx add <name>` without flags):
 
@@ -164,14 +169,43 @@ Provider (leave empty for native auth / OAuth):
   API Key: sk-xxx
   Model: claude-opus-4-6
   ...
+Options:
+  ...
+Custom env vars (leave name empty to finish):
+  Name: OPENAI_API_VERSION
+  Value: 2024-02-01
+  Name:
+```
+
+## Managing Custom Env Vars
+
+Use `aictx env` to add or remove custom env vars after a context has been created:
+
+```bash
+aictx env work-project claude-code-cli
+```
+
+Interactive session:
+
+```
+Custom env vars for work-project / claude-code-cli:
+  OPENAI_API_VERSION=2024-02-01
+
+Actions: [a]dd  [r]emove  [q]uit
+Action: a
+  Name: MY_FLAG
+  Value: 1
+  Set MY_FLAG.
+Action: q
+Saved.
 ```
 
 ## Showing a Context
 
 ```bash
-aictx show            # current context (API key masked)
+aictx show            # current context (API key and env var values masked)
 aictx show work       # specific context
-aictx show --reveal   # show full API key
+aictx show --reveal   # show full API key and env var values
 ```
 
 ## Shell Completion
@@ -224,6 +258,8 @@ contexts:
         options:
           alwaysThinking: true
           disableTelemetry: true
+        env:
+          OPENAI_API_VERSION: "2024-02-01"
         hasKeyringKey: true
 
       - id: claude-code-vscode
