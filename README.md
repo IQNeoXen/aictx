@@ -167,7 +167,7 @@ aictx add work-project \
 
 **Interactively** (run `aictx add <name>` without flags):
 
-```
+```txt
 Description: Work proxy config
 Available targets:
   [1] Claude Code CLI (claude-code-cli) (detected)
