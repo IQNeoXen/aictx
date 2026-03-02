@@ -26,6 +26,13 @@ brew tap IQNeoXen/aictx
 brew install aictx
 ```
 
+> **macOS Gatekeeper warning:** On macOS 15 (Sequoia) and later, Apple may block the binary with a "cannot be opened because the developer cannot be verified" dialog. To unblock it:
+>
+> **Option A — Terminal:** Run `xattr -d com.apple.quarantine $(which aictx)` in your terminal.
+>
+> **Option B — System Settings:**
+> Open **System Settings → Privacy & Security**, scroll down to the Security section, and click **"Open Anyway"** next to the `aictx` message.
+
 ### From source (go install)
 
 Requires [Go](https://go.dev/doc/install) 1.21+.
