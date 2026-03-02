@@ -43,6 +43,7 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(addCmd)
+	rootCmd.AddCommand(copyCmd)
 	rootCmd.AddCommand(rmCmd)
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(currentCmd)
