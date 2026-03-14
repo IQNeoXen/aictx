@@ -176,6 +176,35 @@ func (c *Config) ContextNames() []string {
 	return names
 }
 
+// RenameContext renames oldName to newName in the context list and updates
+// State.Current/Previous if they referenced oldName.
+// Returns false if oldName is not found or newName already exists.
+func (c *Config) RenameContext(oldName, newName string) bool {
+	if oldName == newName {
+		return false
+	}
+	idx := -1
+	for i := range c.Contexts {
+		switch c.Contexts[i].Name {
+		case oldName:
+			idx = i
+		case newName:
+			return false // newName already taken
+		}
+	}
+	if idx == -1 {
+		return false // oldName not found
+	}
+	c.Contexts[idx].Name = newName
+	if c.State.Current == oldName {
+		c.State.Current = newName
+	}
+	if c.State.Previous == oldName {
+		c.State.Previous = newName
+	}
+	return true
+}
+
 // RemoveContext removes a context by name. Returns false if not found.
 func (c *Config) RemoveContext(name string) bool {
 	for i, ctx := range c.Contexts {

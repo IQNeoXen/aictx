@@ -121,6 +121,71 @@ func TestRemoveContext(t *testing.T) {
 	}
 }
 
+func TestRenameContext(t *testing.T) {
+	t.Run("renames context and leaves others intact", func(t *testing.T) {
+		cfg := &Config{
+			Contexts: []Context{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+		}
+		if !cfg.RenameContext("b", "beta") {
+			t.Fatal("RenameContext returned false, want true")
+		}
+		names := cfg.ContextNames()
+		if len(names) != 3 || names[0] != "a" || names[1] != "beta" || names[2] != "c" {
+			t.Errorf("ContextNames = %v, want [a beta c]", names)
+		}
+	})
+
+	t.Run("updates State.Current", func(t *testing.T) {
+		cfg := &Config{
+			State:    State{Current: "old"},
+			Contexts: []Context{{Name: "old"}},
+		}
+		cfg.RenameContext("old", "new")
+		if cfg.State.Current != "new" {
+			t.Errorf("State.Current = %q, want new", cfg.State.Current)
+		}
+	})
+
+	t.Run("updates State.Previous", func(t *testing.T) {
+		cfg := &Config{
+			State:    State{Current: "x", Previous: "old"},
+			Contexts: []Context{{Name: "x"}, {Name: "old"}},
+		}
+		cfg.RenameContext("old", "new")
+		if cfg.State.Previous != "new" {
+			t.Errorf("State.Previous = %q, want new", cfg.State.Previous)
+		}
+	})
+
+	t.Run("returns false when old and new names are the same", func(t *testing.T) {
+		cfg := &Config{Contexts: []Context{{Name: "a"}}}
+		if cfg.RenameContext("a", "a") {
+			t.Error("RenameContext returned true, want false")
+		}
+		if cfg.Contexts[0].Name != "a" {
+			t.Errorf("Context name modified unexpectedly: %q", cfg.Contexts[0].Name)
+		}
+	})
+
+	t.Run("returns false when oldName not found", func(t *testing.T) {
+		cfg := &Config{Contexts: []Context{{Name: "a"}}}
+		if cfg.RenameContext("missing", "b") {
+			t.Error("RenameContext returned true, want false")
+		}
+	})
+
+	t.Run("returns false when newName already exists", func(t *testing.T) {
+		cfg := &Config{Contexts: []Context{{Name: "a"}, {Name: "b"}}}
+		if cfg.RenameContext("a", "b") {
+			t.Error("RenameContext returned true, want false")
+		}
+		// Neither context should be modified.
+		if cfg.Contexts[0].Name != "a" || cfg.Contexts[1].Name != "b" {
+			t.Errorf("Contexts modified unexpectedly: %v", cfg.ContextNames())
+		}
+	})
+}
+
 func TestGetTarget(t *testing.T) {
 	ctx := &Context{
 		Targets: []TargetEntry{{ID: "t1"}, {ID: "t2"}},
