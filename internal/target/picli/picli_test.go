@@ -300,6 +300,89 @@ func TestModelEntry_NonClaudeReasoning(t *testing.T) {
 	}
 }
 
+// ---------- Per-model API classification ----------
+
+func TestApiForModel(t *testing.T) {
+	tgt := New()
+	cases := map[string]string{
+		"claude-opus-4.8":  "anthropic-messages",
+		"Claude-Foo":       "anthropic-messages",
+		"gpt-5":            "openai-completions",
+		"o3":               "openai-completions",
+		"gemini-3.5-flash": "openai-completions",
+	}
+	for id, want := range cases {
+		if got := tgt.apiForModel(id); got != want {
+			t.Errorf("apiForModel(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
+func TestBuildExtension_PerModelStaticFallback(t *testing.T) {
+	tgt := setupPi(t)
+
+	gptExt := tgt.buildExtension(config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://aikeys.maibornwolff.de/",
+			APIKey:   "sk-test-key",
+			Model:    "gpt-5",
+		},
+	})
+	staticStart := strings.Index(gptExt, "const staticModels = [")
+	staticEnd := strings.Index(gptExt, "const providerHeaders")
+	if staticStart < 0 || staticEnd < 0 || staticEnd <= staticStart {
+		t.Fatalf("could not locate static model block; got:\n%s", gptExt)
+	}
+	staticBlock := gptExt[staticStart:staticEnd]
+	if !strings.Contains(staticBlock, `"openai-completions"`) {
+		t.Errorf("gpt-5 static fallback should use openai-completions; got:\n%s", staticBlock)
+	}
+	if strings.Contains(staticBlock, `"anthropic-messages"`) {
+		t.Errorf("gpt-5 static fallback should not use anthropic-messages; got:\n%s", staticBlock)
+	}
+
+	claudeExt := tgt.buildExtension(config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://aikeys.maibornwolff.de/",
+			APIKey:   "sk-test-key",
+			Model:    "claude-opus-4.8",
+		},
+	})
+	cStart := strings.Index(claudeExt, "const staticModels = [")
+	cEnd := strings.Index(claudeExt, "const providerHeaders")
+	if cStart < 0 || cEnd < 0 || cEnd <= cStart {
+		t.Fatalf("could not locate static model block; got:\n%s", claudeExt)
+	}
+	claudeBlock := claudeExt[cStart:cEnd]
+	if !strings.Contains(claudeBlock, `"anthropic-messages"`) {
+		t.Errorf("claude static fallback should use anthropic-messages; got:\n%s", claudeBlock)
+	}
+}
+
+func TestBuildExtension_PerModelHelperPresent(t *testing.T) {
+	tgt := setupPi(t)
+	ext := tgt.buildExtension(config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://aikeys.maibornwolff.de/",
+			APIKey:   "sk-test-key",
+			Model:    "claude-opus-4.8",
+		},
+	})
+	if !strings.Contains(ext, "function aictxApiForModel") {
+		t.Errorf("extension should define aictxApiForModel; got:\n%s", ext)
+	}
+	// Neither fetch path should hardcode api: apiFormat on mapped models.
+	if strings.Contains(ext, "api: apiFormat") {
+		t.Errorf("mapped models should route through aictxApiForModel, not hardcode apiFormat; got:\n%s", ext)
+	}
+	if !strings.Contains(ext, "api: aictxApiForModel(id, (m.litellm_params && m.litellm_params.model) || \"\", apiFormat)") {
+		t.Errorf("/model/info path should classify per model; got:\n%s", ext)
+	}
+	if !strings.Contains(ext, `api: aictxApiForModel(m.id, "", apiFormat)`) {
+		t.Errorf("/v1/models fallback path should classify per model; got:\n%s", ext)
+	}
+}
+
 // ---------- Async dynamic extension ----------
 
 func TestBuildExtension_AsyncDynamic(t *testing.T) {

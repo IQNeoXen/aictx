@@ -137,6 +137,20 @@ func (t *Target) apiType(te config.TargetEntry) string {
 	return "anthropic-messages"
 }
 
+// apiForModel returns the pi api format string for a single model, derived from
+// the model id. This is the proxy-oriented binary rule: a LiteLLM-style proxy
+// fronts both Anthropic Claude and OpenAI-compatible (GPT/Gemini/Azure/...)
+// models under one baseUrl, so each model must carry its real wire protocol.
+// It mirrors aictxApiForModel in the embedded TS (same lowercase +
+// claude/anthropic match) so the static fallback and the live fetch agree.
+func (t *Target) apiForModel(modelID string) string {
+	lower := strings.ToLower(modelID)
+	if strings.Contains(lower, "claude") || strings.Contains(lower, "anthropic") {
+		return "anthropic-messages"
+	}
+	return "openai-completions"
+}
+
 // isCopilotProvider returns true when the effective provider points at the
 // GitHub Copilot API. The check is endpoint-based because the ProviderType
 // is resolved to "openai" by switchContext before Apply() is called.
@@ -155,10 +169,10 @@ func (t *Target) buildExtension(te config.TargetEntry) string {
 	// Build the static fallback model list (used when the live fetch fails).
 	var staticModels strings.Builder
 	if te.Provider.Model != "" {
-		staticModels.WriteString(t.modelEntry(te.Provider.Model, apiType))
+		staticModels.WriteString(t.modelEntry(te.Provider.Model, t.apiForModel(te.Provider.Model)))
 		if te.Provider.SmallModel != "" {
 			staticModels.WriteString(",\n")
-			staticModels.WriteString(t.modelEntry(te.Provider.SmallModel, apiType))
+			staticModels.WriteString(t.modelEntry(te.Provider.SmallModel, t.apiForModel(te.Provider.SmallModel)))
 		}
 	}
 
@@ -224,7 +238,14 @@ func (t *Target) buildExtension(te config.TargetEntry) string {
 // internal/models.Dedup (strip "vendor:" prefix, treat dashed versions as
 // dotted, prefer the dotted unprefixed representative). On any failure it
 // returns the caller-supplied static fallback list so pi always starts.
-const dynamicModelsHelperJS = `function aictxNormalizeId(id: string): string {
+const dynamicModelsHelperJS = `function aictxApiForModel(id: string, litellmModel: string, fallback: string): string {
+  const hay = ((litellmModel || "") + " " + (id || "")).toLowerCase();
+  if (hay.includes("anthropic") || hay.includes("claude")) return "anthropic-messages";
+  if (hay.trim()) return "openai-completions";
+  return fallback;
+}
+
+function aictxNormalizeId(id: string): string {
   const colon = id.indexOf(":");
   if (colon >= 0) id = id.slice(colon + 1);
   let prev: string;
@@ -293,7 +314,7 @@ async function aictxFetchModels(
             return {
               id,
               name: id,
-              api: apiFormat,
+              api: aictxApiForModel(id, (m.litellm_params && m.litellm_params.model) || "", apiFormat),
               reasoning: !!info.supports_reasoning,
               input: info.supports_vision ? ["text", "image"] : ["text"],
               cost: {
@@ -322,7 +343,7 @@ async function aictxFetchModels(
         const mapped = (p.data || []).map((m: any) => ({
           id: m.id,
           name: m.id,
-          api: apiFormat,
+          api: aictxApiForModel(m.id, "", apiFormat),
           reasoning: String(m.id).includes("claude"),
           input: ["text", "image"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

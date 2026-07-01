@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Per-model API type in the generated pi extension** — the non-Copilot extension previously assigned a single wire protocol (`api`) to every model it registered, so on a mixed-provider proxy (e.g. LiteLLM fronting both Anthropic Claude and OpenAI/Azure/Gemini) switching to a model whose real API differed from the context default sent requests in the wrong format and failed
+  - The `api` is now derived **per model**: from `/model/info`'s `litellm_params.model` when available, otherwise from the model id (`claude`/`anthropic` → `anthropic-messages`, else `openai-completions`), applied across both live fetch paths and the static fallback
+  - Switching between Claude and GPT/Gemini models via `/model` now works without manual context changes; the Copilot path is unchanged
+
 ## v0.2.0 (2026-07-01)
 
 ### Added

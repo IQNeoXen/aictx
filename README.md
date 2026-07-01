@@ -300,6 +300,12 @@ any other model on the fly via `/model`. If the endpoint is slow or unreachable,
 the extension falls back (after a ~5s timeout) to the static `model` /
 `smallModel` entries from the config, so pi always starts.
 
+The wire protocol (`api`) is auto-detected **per model** so mixed-provider
+proxies work: models whose id (or upstream `litellm_params.model`) contains
+`claude`/`anthropic` are registered as `anthropic-messages`, everything else as
+`openai-completions`. This lets you switch between Claude and GPT/Gemini models
+via `/model` without changing the context.
+
 ## Shell Completion
 
 ```bash
