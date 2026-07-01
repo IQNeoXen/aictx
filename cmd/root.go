@@ -58,6 +58,7 @@ func init() {
 	rootCmd.AddCommand(targetsCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(copilotCmd)
+	rootCmd.AddCommand(modelCmd)
 }
 
 func rootRun(cmd *cobra.Command, args []string) error {
