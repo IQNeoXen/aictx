@@ -300,6 +300,84 @@ func TestModelEntry_NonClaudeReasoning(t *testing.T) {
 	}
 }
 
+// ---------- Async dynamic extension ----------
+
+func TestBuildExtension_AsyncDynamic(t *testing.T) {
+	tgt := setupPi(t)
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://aikeys.maibornwolff.de/",
+			APIKey:   "sk-test-key",
+			Model:    "claude-opus-4.8",
+		},
+	}
+	ext := tgt.buildExtension(te)
+
+	for _, want := range []string{
+		"export default async function",
+		"await",
+		"fetch",
+		"/model/info",
+		"aictxDedup",
+		"staticModels",
+		"AbortController",
+	} {
+		if !strings.Contains(ext, want) {
+			t.Errorf("async extension missing %q; got:\n%s", want, ext)
+		}
+	}
+	// registerProvider under the derived name with the fetched models.
+	if !strings.Contains(ext, `pi.registerProvider("aikeys"`) {
+		t.Error("extension should register under derived provider name")
+	}
+	if !strings.Contains(ext, "models,") {
+		t.Error("extension should pass fetched models to registerProvider")
+	}
+}
+
+func TestBuildExtension_StaticFallbackPresent(t *testing.T) {
+	tgt := setupPi(t)
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:   "https://aikeys.maibornwolff.de/",
+			APIKey:     "sk-test-key",
+			Model:      "claude-opus-4.8",
+			SmallModel: "claude-haiku-4.5",
+		},
+	}
+	ext := tgt.buildExtension(te)
+	if !strings.Contains(ext, "claude-opus-4.8") {
+		t.Error("static fallback should contain the config Model")
+	}
+	if !strings.Contains(ext, "claude-haiku-4.5") {
+		t.Error("static fallback should contain the config SmallModel")
+	}
+}
+
+func TestApply_AsyncExtensionDiscoverable(t *testing.T) {
+	tgt := setupPi(t)
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://aikeys.maibornwolff.de/",
+			APIKey:   "sk-test-key",
+			Model:    "claude-opus-4.8",
+		},
+	}
+	if err := tgt.Apply(te); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	dr, err := tgt.Discover()
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if dr.Provider.Endpoint != "https://aikeys.maibornwolff.de/" {
+		t.Errorf("discovered endpoint = %q", dr.Provider.Endpoint)
+	}
+	if dr.Provider.APIKey != "sk-test-key" {
+		t.Errorf("discovered apiKey = %q", dr.Provider.APIKey)
+	}
+}
+
 // ---------- Discover ----------
 
 func TestDiscover_NoExtension(t *testing.T) {
