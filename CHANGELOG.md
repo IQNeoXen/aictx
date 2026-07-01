@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.0 (2026-07-01)
+
+### Added
+
+- **`aictx model`** — select the primary model for the active context
+  - Fetches the available models live from the active context's provider endpoint (OpenAI-style `/v1/models` with `/models` fallback)
+  - Interactive picker (pre-selects the current model) with a non-TTY scanner fallback for piped use
+  - Persists the chosen model to `config.yaml` and regenerates the pi extension immediately
+  - Guards reject Copilot contexts (managed via `aictx copilot login`) and native/OAuth contexts without a provider endpoint
+- **Dynamic model list in the generated pi extension** — for non-Copilot contexts, `~/.pi/agent/extensions/aictx-provider.ts` is now an async factory that fetches all models at pi startup
+  - Prefers `/model/info` (deriving cost per-million, context window, max tokens, reasoning, and vision capabilities), falling back to `/v1/models` then `/models`
+  - Registers every model with pi; defaults to the config model and exposes the rest via `/model`
+  - Bounded by a ~5s `AbortController` timeout, falling back to the static `model` / `smallModel` entries so pi always starts
+- New `internal/models` package with `FetchModelIDs` and a `Dedup` helper (strips `vendor:` prefixes, treats dashed versions as dotted, prefers the dotted unprefixed representative); the same dedup rule is mirrored in the generated extension
+
 ## v0.1.2 (2026-04-20)
 
 ### Added
