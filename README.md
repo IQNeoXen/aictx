@@ -117,6 +117,7 @@ aictx
 | `aictx show [name]`        | Show context details (defaults to current)               |
 | `aictx current`            | Print the current context name                           |
 | `aictx discover`           | Detect config from installed tools and save as a context |
+| `aictx model`              | Pick the primary model for the active context (live list) |
 | `aictx completion <shell>` | Print a shell completion script                          |
 | `aictx copilot login`      | Authenticate with GitHub Copilot via Device Flow         |
 | `aictx copilot status`     | Show GitHub Copilot login status                         |
@@ -269,6 +270,35 @@ aictx show            # current context (API key, header values, and env var val
 aictx show work       # specific context
 aictx show --reveal   # show full API key, header values, and env var values
 ```
+
+## Selecting a Model
+
+`aictx model` fetches the models available from the **active context's**
+provider endpoint, shows an interactive picker (pre-selecting the current
+model), persists your choice to `~/.config/aictx/config.yaml`, and immediately
+regenerates the pi extension so the new default takes effect.
+
+```bash
+aictx trustedzone-opus   # switch to a context first
+aictx model              # pick a new primary model from the live list
+```
+
+When stdout is not a terminal (piped), it prints the available models and reads
+your selection from stdin, defaulting to the current model on empty input.
+
+> `aictx model` is not supported for Copilot contexts (managed via
+> `aictx copilot login`) or for native/OAuth contexts with no provider endpoint.
+
+### Dynamic model list in the pi extension
+
+The aictx-generated pi extension (`~/.pi/agent/extensions/aictx-provider.ts`)
+for non-Copilot contexts is an **async factory** that queries the provider
+endpoint for **all** available models at pi startup and registers each one with
+pi (deriving cost, context window, and capabilities from `/model/info` where
+available). pi defaults to the model in your aictx config, and you can switch to
+any other model on the fly via `/model`. If the endpoint is slow or unreachable,
+the extension falls back (after a ~5s timeout) to the static `model` /
+`smallModel` entries from the config, so pi always starts.
 
 ## Shell Completion
 
