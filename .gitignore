@@ -1,6 +1,7 @@
 # harness stuff
 .agents/
 .claude/
+.pi-subagents/
 docs/
 skills-lock.json
 
