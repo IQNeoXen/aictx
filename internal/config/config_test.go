@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	zalkeyring "github.com/zalando/go-keyring"
@@ -21,12 +22,48 @@ func TestProviderIsEmpty(t *testing.T) {
 		{Provider{Model: "m"}, false},
 		{Provider{SmallModel: "s"}, false},
 		{Provider{Headers: map[string]string{"X-Foo": "bar"}}, false},
+		// Name is deliberately excluded from IsEmpty: a Name-only provider
+		// stays "empty" = native-auth mode.
+		{Provider{Name: "x"}, true},
 	}
 	for _, c := range cases {
 		got := c.p.IsEmpty()
 		if got != c.want {
 			t.Errorf("IsEmpty(%+v) = %v, want %v", c.p, got, c.want)
 		}
+	}
+}
+
+func TestProviderClone(t *testing.T) {
+	orig := Provider{
+		Endpoint:     "https://example.com",
+		APIKey:       "sk-secret",
+		Model:        "claude-opus-4-6",
+		SmallModel:   "claude-haiku-4-5",
+		Headers:      map[string]string{"X-H": "v"},
+		ProviderType: "openai",
+		Name:         "custom",
+	}
+
+	// Guard: every Provider field must be set to a non-zero value above, so
+	// this test fails when a new field is added without updating it (and
+	// forces a check that Clone() still copies everything).
+	v := reflect.ValueOf(orig)
+	for i := 0; i < v.NumField(); i++ {
+		if v.Field(i).IsZero() {
+			t.Errorf("Provider field %s not covered by TestProviderClone; set it above and verify Clone()", v.Type().Field(i).Name)
+		}
+	}
+
+	cp := orig.Clone()
+	if !reflect.DeepEqual(cp, orig) {
+		t.Errorf("Clone() = %+v, want %+v", cp, orig)
+	}
+
+	// Headers map must be independent of the original.
+	cp.Headers["X-H"] = "changed"
+	if orig.Headers["X-H"] != "v" {
+		t.Error("Clone() shares the Headers map with the original")
 	}
 }
 

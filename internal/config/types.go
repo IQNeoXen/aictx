@@ -50,6 +50,23 @@ type Provider struct {
 	SmallModel   string            `yaml:"smallModel,omitempty"`
 	Headers      map[string]string `yaml:"headers,omitempty"`
 	ProviderType string            `yaml:"providerType,omitempty"` // e.g. "anthropic" (default), "openai"
+
+	// Name optionally overrides the derived provider name shown in tools
+	// (e.g. pi's /model badge). Ignored for Copilot endpoints. Only takes
+	// effect when an Endpoint is set.
+	Name string `yaml:"name,omitempty"`
+}
+
+// Clone returns a deep copy of the Provider (the Headers map is copied).
+func (p Provider) Clone() Provider {
+	cp := p
+	if p.Headers != nil {
+		cp.Headers = make(map[string]string, len(p.Headers))
+		for k, v := range p.Headers {
+			cp.Headers[k] = v
+		}
+	}
+	return cp
 }
 
 // IsEmpty returns true if no provider fields are set (i.e. native auth / OAuth).

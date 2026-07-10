@@ -196,19 +196,7 @@ func deepCopyContext(src config.Context) config.Context {
 		HasKeyringKey: src.HasKeyringKey,
 		HasOAuthKey:   src.HasOAuthKey,
 		Options:       src.Options,
-		Provider: config.Provider{
-			Endpoint:     src.Provider.Endpoint,
-			APIKey:       src.Provider.APIKey,
-			Model:        src.Provider.Model,
-			SmallModel:   src.Provider.SmallModel,
-			ProviderType: src.Provider.ProviderType,
-		},
-	}
-	if src.Provider.Headers != nil {
-		dst.Provider.Headers = make(map[string]string, len(src.Provider.Headers))
-		for k, v := range src.Provider.Headers {
-			dst.Provider.Headers[k] = v
-		}
+		Provider:      src.Provider.Clone(),
 	}
 	// Deep copy pointer-to-bool options
 	if src.Options.AlwaysThinking != nil {

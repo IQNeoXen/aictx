@@ -192,6 +192,125 @@ func TestApply_MergesExistingSettings(t *testing.T) {
 	}
 }
 
+// ---------- Provider naming ----------
+
+func TestPiProviderName_OpenAIEndpoint(t *testing.T) {
+	tgt := New()
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:     "https://aikeys.maibornwolff.de/",
+			ProviderType: "openai",
+		},
+	}
+	if name := tgt.piProviderName(te); name != "aikeys" {
+		t.Errorf("piProviderName() = %q, want \"aikeys\"", name)
+	}
+}
+
+func TestPiProviderName_LocalEndpoints(t *testing.T) {
+	tgt := New()
+	endpoints := []string{
+		"http://127.0.0.1:1234/v1",
+		"http://localhost:1234/v1",
+		"http://[::1]:8080",
+	}
+	for _, ptype := range []string{"anthropic", "openai"} {
+		for _, ep := range endpoints {
+			te := config.TargetEntry{
+				Provider: config.Provider{Endpoint: ep, ProviderType: ptype},
+			}
+			if name := tgt.piProviderName(te); name != "local" {
+				t.Errorf("piProviderName(%s, %s) = %q, want \"local\"", ptype, ep, name)
+			}
+		}
+	}
+}
+
+func TestPiProviderName_UnparseableEndpoint(t *testing.T) {
+	tgt := New()
+	te := config.TargetEntry{
+		Provider: config.Provider{Endpoint: ":://bad", ProviderType: "openai"},
+	}
+	if name := tgt.piProviderName(te); name != "aictx" {
+		t.Errorf("piProviderName() = %q, want \"aictx\"", name)
+	}
+}
+
+func TestPiProviderName_ExplicitName(t *testing.T) {
+	tgt := New()
+
+	// Name + custom endpoint → Name wins over hostname derivation.
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:     "http://127.0.0.1:1234/v1",
+			ProviderType: "openai",
+			Name:         "lmstudio",
+		},
+	}
+	if name := tgt.piProviderName(te); name != "lmstudio" {
+		t.Errorf("piProviderName() = %q, want \"lmstudio\"", name)
+	}
+
+	// Name + Copilot endpoint → still "copilot" (OAuth identity is keyed to it).
+	te = config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:     "https://api.githubcopilot.com",
+			ProviderType: "openai",
+			Name:         "mycopilot",
+		},
+	}
+	if name := tgt.piProviderName(te); name != "copilot" {
+		t.Errorf("piProviderName() = %q, want \"copilot\"", name)
+	}
+
+	// Name + no endpoint → builtin id (Name requires an endpoint).
+	te = config.TargetEntry{
+		Provider: config.Provider{Name: "custom", ProviderType: "openai"},
+	}
+	if name := tgt.piProviderName(te); name != "openai" {
+		t.Errorf("piProviderName() = %q, want \"openai\"", name)
+	}
+	te = config.TargetEntry{
+		Provider: config.Provider{Name: "custom"},
+	}
+	if name := tgt.piProviderName(te); name != "anthropic" {
+		t.Errorf("piProviderName() = %q, want \"anthropic\"", name)
+	}
+}
+
+func TestPiApply_OpenAIProvider(t *testing.T) {
+	tgt := setupPi(t)
+
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:     "https://aikeys.maibornwolff.de/",
+			APIKey:       "sk-test-key",
+			Model:        "gpt-5.5",
+			ProviderType: "openai",
+		},
+	}
+	if err := tgt.Apply(te); err != nil {
+		t.Fatalf("Apply() error: %v", err)
+	}
+
+	ext := readExtension(t, tgt)
+	if !strings.Contains(ext, `pi.registerProvider("aikeys"`) {
+		t.Errorf("extension should register under derived name \"aikeys\"; got:\n%s", ext)
+	}
+	// Exact substring — a bare "openai" check would false-match "openai-completions".
+	if strings.Contains(ext, `registerProvider("openai"`) {
+		t.Errorf("extension must not register under pi's builtin \"openai\" id; got:\n%s", ext)
+	}
+
+	m := readSettingsMap(t, tgt)
+	if m["defaultProvider"] != "aikeys" {
+		t.Errorf("defaultProvider = %v, want \"aikeys\"", m["defaultProvider"])
+	}
+	if m["defaultModel"] != "gpt-5.5" {
+		t.Errorf("defaultModel = %v, want \"gpt-5.5\"", m["defaultModel"])
+	}
+}
+
 // ---------- Copilot provider ----------
 
 func TestPiProviderName_CopilotEndpoint(t *testing.T) {
@@ -415,6 +534,25 @@ func TestBuildExtension_AsyncDynamic(t *testing.T) {
 	}
 	if !strings.Contains(ext, "models,") {
 		t.Error("extension should pass fetched models to registerProvider")
+	}
+}
+
+func TestBuildExtension_ResponsesModeIncluded(t *testing.T) {
+	tgt := setupPi(t)
+	ext := tgt.buildExtension(config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://aikeys.maibornwolff.de/",
+			APIKey:   "sk-test-key",
+			Model:    "claude-opus-4.8",
+		},
+	})
+	// The /model/info filter must admit Responses-API models (mode:
+	// "responses"), which are chat-capable through the LiteLLM proxy.
+	if !strings.Contains(ext, `mode === "responses"`) {
+		t.Errorf("extension /model/info filter should accept mode \"responses\"; got:\n%s", ext)
+	}
+	if !strings.Contains(ext, `mode === "chat" || mode === "responses" || mode == null`) {
+		t.Errorf("extension /model/info filter should accept chat, responses, and missing mode; got:\n%s", ext)
 	}
 }
 

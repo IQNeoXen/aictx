@@ -306,6 +306,43 @@ proxies work: models whose id (or upstream `litellm_params.model`) contains
 `openai-completions`. This lets you switch between Claude and GPT/Gemini models
 via `/model` without changing the context.
 
+### Provider naming in pi
+
+The generated extension registers the provider under a **derived name**, which
+pi shows as the badge in its `/model` picker (e.g. `[aikeys]`) and uses to look
+up per-name credentials in `~/.pi/agent/auth.json`. Custom endpoints are
+deliberately *not* registered under pi's built-in ids (`anthropic`, `openai`):
+that would replace pi's built-in model catalog for the session, and pi could
+prefer a stored credential for that name over the key from your aictx config.
+
+Resolution order:
+
+1. Endpoint host under `githubcopilot.com` → always `copilot` (pi's stored
+   Copilot OAuth identity is keyed to this name; `name` is ignored).
+2. No endpoint → the built-in provider id (`anthropic` or `openai`).
+3. Explicit `name` in the provider config → used verbatim.
+4. Unparseable endpoint or empty host → `aictx`.
+5. Host is an IP address or `localhost` → `local`.
+6. Otherwise → the first dot-label of the hostname (`aikeys` from
+   `aikeys.maibornwolff.de`).
+
+Derived names are **not** guarded against pi's built-in ids — an endpoint like
+`openai.example.com` would still derive `openai`. Set `name` explicitly to
+avoid that.
+
+Example — LM Studio via its OpenAI-compatible local server:
+
+```yaml
+contexts:
+  - name: gemma4
+    provider:
+      endpoint: http://127.0.0.1:1234/v1
+      providerType: openai   # OpenAI wire format (default is anthropic)
+      name: lmstudio         # optional; badge shows [lmstudio] instead of [local]
+    targets:
+      - id: pi-cli
+```
+
 ## Shell Completion
 
 ```bash

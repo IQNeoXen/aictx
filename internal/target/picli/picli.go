@@ -3,6 +3,7 @@ package picli
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -97,11 +98,20 @@ func (t *Target) providerType(te config.TargetEntry) string {
 }
 
 // piProviderName returns the name to pass to pi's registerProvider.
-// Special cases:
+// Resolution order:
 //   - GitHub Copilot endpoint → "copilot" (must be checked first, as the
-//     ProviderType is resolved to "openai" by the time Apply() is called).
-//   - Anthropic with custom endpoint → derived from hostname so pi does NOT
-//     apply its stored Anthropic OAuth credentials to proxy requests.
+//     ProviderType is resolved to "openai" by the time Apply() is called;
+//     pi's stored Copilot OAuth identity is keyed to this name, so an
+//     explicit Provider.Name is ignored here).
+//   - No endpoint → the builtin provider type id ("anthropic"/"openai").
+//   - Explicit Provider.Name → used verbatim.
+//   - Otherwise derived from the endpoint hostname: "aictx" if unparseable,
+//     "local" for IP/localhost endpoints, else the first dot-label.
+//
+// Custom endpoints must NOT register under pi's builtin ids ("anthropic",
+// "openai"): pi prefers per-name credentials from ~/.pi/agent/auth.json over
+// the extension's embedded key, and registering under a builtin id replaces
+// pi's builtin model catalog for that provider for the whole session.
 func (t *Target) piProviderName(te config.TargetEntry) string {
 	// Special case: GitHub Copilot endpoint → "copilot".
 	// This check must come first because the ProviderType is resolved to
@@ -114,15 +124,23 @@ func (t *Target) piProviderName(te config.TargetEntry) string {
 		}
 	}
 
-	ptype := t.providerType(te)
-	if ptype != "anthropic" || te.Provider.Endpoint == "" {
-		return ptype
+	// No endpoint → builtin provider id. A Provider.Name without an endpoint
+	// is ignored: applyExtension registers no provider in that case, so a
+	// custom defaultProvider in settings.json would dangle.
+	if te.Provider.Endpoint == "" {
+		return t.providerType(te)
+	}
+	if te.Provider.Name != "" {
+		return te.Provider.Name
 	}
 	u, err := url.Parse(te.Provider.Endpoint)
 	if err != nil || u.Hostname() == "" {
 		return "aictx"
 	}
 	host := u.Hostname()
+	if host == "localhost" || net.ParseIP(host) != nil {
+		return "local"
+	}
 	if idx := strings.Index(host, "."); idx > 0 {
 		return host[:idx] // e.g. "aikeys" from "aikeys.maibornwolff.de"
 	}
@@ -306,7 +324,7 @@ async function aictxFetchModels(
         const mapped = (payload.data || [])
           .filter((m: any) => {
             const mode = m.model_info && m.model_info.mode;
-            return mode === "chat" || mode == null;
+            return mode === "chat" || mode === "responses" || mode == null;
           })
           .map((m: any) => {
             const info = m.model_info || {};

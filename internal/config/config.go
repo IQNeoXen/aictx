@@ -230,19 +230,7 @@ func deepCopy(cfg *Config) *Config {
 			HasKeyringKey: ctx.HasKeyringKey,
 			HasOAuthKey:   ctx.HasOAuthKey,
 			Options:       ctx.Options,
-			Provider: Provider{
-				Endpoint:     ctx.Provider.Endpoint,
-				APIKey:       ctx.Provider.APIKey,
-				Model:        ctx.Provider.Model,
-				SmallModel:   ctx.Provider.SmallModel,
-				ProviderType: ctx.Provider.ProviderType,
-			},
-		}
-		if ctx.Provider.Headers != nil {
-			cCtx.Provider.Headers = make(map[string]string, len(ctx.Provider.Headers))
-			for k, v := range ctx.Provider.Headers {
-				cCtx.Provider.Headers[k] = v
-			}
+			Provider:      ctx.Provider.Clone(),
 		}
 		cCtx.Targets = make([]TargetEntry, len(ctx.Targets))
 		for ti, te := range ctx.Targets {
@@ -250,19 +238,7 @@ func deepCopy(cfg *Config) *Config {
 				ID:            te.ID,
 				HasKeyringKey: te.HasKeyringKey,
 				Options:       te.Options,
-				Provider: Provider{
-					Endpoint:     te.Provider.Endpoint,
-					APIKey:       te.Provider.APIKey,
-					Model:        te.Provider.Model,
-					SmallModel:   te.Provider.SmallModel,
-					ProviderType: te.Provider.ProviderType,
-				},
-			}
-			if te.Provider.Headers != nil {
-				cTe.Provider.Headers = make(map[string]string, len(te.Provider.Headers))
-				for k, v := range te.Provider.Headers {
-					cTe.Provider.Headers[k] = v
-				}
+				Provider:      te.Provider.Clone(),
 			}
 			if te.Env != nil {
 				cTe.Env = make(map[string]string, len(te.Env))
