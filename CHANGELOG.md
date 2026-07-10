@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.0 (2026-07-10)
+
+### Added
+
+- **`provider.name` config field** — optionally overrides the derived provider name shown in tools (e.g. pi's `/model` badge, `name: lmstudio` → `[lmstudio]`)
+  - Only takes effect when an endpoint is set; Copilot endpoints always register as `copilot`
+
+### Fixed
+
+- **`providerType: openai` contexts no longer register under pi's built-in `openai` provider id** — doing so replaced pi's built-in OpenAI model catalog for the session, made the `/model` badge ambiguous, and let pi prefer a stored `openai` credential from `~/.pi/agent/auth.json` over the context's key
+  - The provider name is now derived from the endpoint hostname for **all** provider types (e.g. `aikeys` from `aikeys.maibornwolff.de`), matching the existing anthropic behavior; IP and `localhost` endpoints derive `local`
+  - Derived names are not guarded against pi built-in ids (e.g. `openai.example.com` would still derive `openai`) — use `provider.name` to override
+- **Responses-API models are no longer hidden in pi** — the generated extension's `/model/info` filter now admits `mode: "responses"` entries (registered as `openai-completions`, which a LiteLLM proxy transparently transforms), so chat-capable Responses models appear in pi's `/model` picker
+- Provider copies now go through a single `Provider.Clone()` helper, so newly added provider fields can no longer be silently dropped by `aictx copy` / config save
+
 ## v0.2.1 (2026-07-01)
 
 ### Fixed
