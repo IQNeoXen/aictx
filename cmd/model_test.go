@@ -49,6 +49,93 @@ func TestModel_CopilotGuard(t *testing.T) {
 	}
 }
 
+func TestModel_V1EndpointFallbackPersistsAndRegenerates(t *testing.T) {
+	home := setupModelCmdEnv(t)
+
+	// pi-cli must be detected: create ~/.pi/agent.
+	if err := os.MkdirAll(filepath.Join(home, ".pi", "agent"), 0755); err != nil {
+		t.Fatalf("mkdir pi: %v", err)
+	}
+
+	seenFirst := false
+	seenFallback := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/v1/models":
+			seenFirst = true
+			w.WriteHeader(http.StatusNotFound)
+		case "/v1/models":
+			seenFallback = true
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":[{"id":"meta/muse-glimmer"},{"id":"text-embedding-nomic-embed-text-v1.5"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		State: config.State{Current: "local"},
+		Contexts: []config.Context{
+			{
+				Name: "local",
+				Provider: config.Provider{
+					Endpoint:     srv.URL + "/v1",
+					ProviderType: "openai",
+					Name:         "lmstudio",
+					Model:        "stale/model",
+				},
+				Targets: []config.TargetEntry{{ID: "pi-cli"}},
+			},
+		},
+	}
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Non-TTY: feed selection via stdin.
+	r, w, _ := os.Pipe()
+	oldStdin := os.Stdin
+	os.Stdin = r
+	w.WriteString("meta/muse-glimmer\n")
+	w.Close()
+	defer func() { os.Stdin = oldStdin }()
+
+	out := captureStdout(func() {
+		if err := modelRun(nil, nil); err != nil {
+			t.Errorf("modelRun: %v", err)
+		}
+	})
+
+	if !seenFirst {
+		t.Error("expected initial /v1/v1/models request")
+	}
+	if !seenFallback {
+		t.Error("expected fallback /v1/models request")
+	}
+	if !strings.Contains(out, "Available models: meta/muse-glimmer, text-embedding-nomic-embed-text-v1.5") {
+		t.Errorf("output should list fallback models; got %q", out)
+	}
+
+	reloaded, _ := config.Load()
+	if got := reloaded.FindContext("local").Provider.Model; got != "meta/muse-glimmer" {
+		t.Errorf("persisted model = %q, want meta/muse-glimmer", got)
+	}
+
+	extPath := filepath.Join(home, ".pi", "agent", "extensions", "aictx-provider.ts")
+	data, err := os.ReadFile(extPath)
+	if err != nil {
+		t.Fatalf("read extension: %v", err)
+	}
+	ext := string(data)
+	if !strings.Contains(ext, "meta/muse-glimmer") {
+		t.Errorf("extension should reference selected model; got:\n%s", ext)
+	}
+	if !strings.Contains(ext, `apiKey: "aictx-local"`) {
+		t.Errorf("keyless extension should include placeholder apiKey; got:\n%s", ext)
+	}
+}
+
 func TestModel_EmptyEndpointGuard(t *testing.T) {
 	setupModelCmdEnv(t)
 	cfg := &config.Config{

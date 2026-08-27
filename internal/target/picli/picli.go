@@ -17,6 +17,11 @@ const ID = "pi-cli"
 // extensionFileName is the generated extension that configures the provider.
 const extensionFileName = "aictx-provider.ts"
 
+// placeholderAPIKey marks keyless local/custom endpoints as configured in pi.
+// pi requires auth presence for extension-registered custom provider models to
+// appear in /model; local servers such as LM Studio ignore this value.
+const placeholderAPIKey = "aictx-local"
+
 type Target struct{}
 
 func New() *Target { return &Target{} }
@@ -241,6 +246,8 @@ func (t *Target) buildExtension(te config.TargetEntry) string {
 	if te.Provider.APIKey != "" {
 		sb.WriteString(fmt.Sprintf("    apiKey: %s,\n", jsonString(te.Provider.APIKey)))
 		sb.WriteString("    authHeader: true,\n")
+	} else if te.Provider.Endpoint != "" {
+		sb.WriteString(fmt.Sprintf("    apiKey: %s,\n", jsonString(placeholderAPIKey)))
 	}
 	if len(te.Provider.Headers) > 0 {
 		sb.WriteString("    headers: providerHeaders,\n")
@@ -526,8 +533,9 @@ func (t *Target) parseExtension(source string, dr *config.DiscoveryResult) {
 	if v := extractTSString(source, "baseUrl"); v != "" {
 		dr.Provider.Endpoint = v
 	}
-	// Look for apiKey: "..."
-	if v := extractTSString(source, "apiKey"); v != "" {
+	// Look for apiKey: "...". Ignore aictx's placeholder for keyless
+	// endpoints so discovery does not persist it as a real secret.
+	if v := extractTSString(source, "apiKey"); v != "" && v != placeholderAPIKey {
 		dr.Provider.APIKey = v
 	}
 }

@@ -85,6 +85,9 @@ func TestApply_BasicProvider(t *testing.T) {
 	if !strings.Contains(ext, `"sk-test-key"`) {
 		t.Error("extension missing apiKey")
 	}
+	if !strings.Contains(ext, "authHeader: true") {
+		t.Error("extension missing authHeader for real apiKey")
+	}
 	// Provider name is derived from the endpoint hostname ("aikeys" from aikeys.maibornwolff.de)
 	// so pi does not apply its stored Anthropic OAuth credentials to proxy requests.
 	if !strings.Contains(ext, `"aikeys"`) {
@@ -124,6 +127,41 @@ func TestApply_EmptyProvider_RemovesExtension(t *testing.T) {
 	}
 	if _, err := os.Stat(tgt.extensionPath()); !os.IsNotExist(err) {
 		t.Error("extension file should be removed for empty provider (OAuth)")
+	}
+}
+
+func TestApply_KeylessCustomEndpointUsesPlaceholderAPIKey(t *testing.T) {
+	tgt := setupPi(t)
+
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:     "http://127.0.0.1:1234/v1",
+			ProviderType: "openai",
+			Name:         "lmstudio",
+			Model:        "meta/muse-glimmer",
+		},
+	}
+	if err := tgt.Apply(te); err != nil {
+		t.Fatalf("Apply() error: %v", err)
+	}
+
+	ext := readExtension(t, tgt)
+	if !strings.Contains(ext, `pi.registerProvider("lmstudio"`) {
+		t.Errorf("extension should register lmstudio provider; got:\n%s", ext)
+	}
+	if !strings.Contains(ext, `apiKey: "aictx-local"`) {
+		t.Errorf("extension missing keyless placeholder apiKey; got:\n%s", ext)
+	}
+	if strings.Contains(ext, "authHeader: true") {
+		t.Errorf("keyless placeholder should not emit authHeader; got:\n%s", ext)
+	}
+	if !strings.Contains(ext, `const models = await aictxFetchModels("http://127.0.0.1:1234/v1", "", providerHeaders, "openai-completions", staticModels);`) {
+		t.Errorf("dynamic model fetch should keep empty fetch auth key for keyless endpoint; got:\n%s", ext)
+	}
+
+	m := readSettingsMap(t, tgt)
+	if m["defaultProvider"] != "lmstudio" {
+		t.Errorf("defaultProvider = %v, want lmstudio", m["defaultProvider"])
 	}
 }
 
@@ -366,9 +404,12 @@ func TestPiApply_CopilotProvider(t *testing.T) {
 	if !strings.Contains(ext, "aictx copilot refresh") {
 		t.Errorf("extension should call 'aictx copilot refresh'; got:\n%s", ext)
 	}
-	// Must NOT contain a hardcoded api token.
+	// Must NOT contain a hardcoded api token or keyless placeholder.
 	if strings.Contains(ext, "tid=") {
 		t.Errorf("extension must not contain a hardcoded Copilot token; got:\n%s", ext)
+	}
+	if strings.Contains(ext, placeholderAPIKey) {
+		t.Errorf("copilot extension must not contain placeholder api key; got:\n%s", ext)
 	}
 	// authHeader must be present.
 	if !strings.Contains(ext, "authHeader: true") {
@@ -572,6 +613,34 @@ func TestBuildExtension_StaticFallbackPresent(t *testing.T) {
 	}
 	if !strings.Contains(ext, "claude-haiku-4.5") {
 		t.Error("static fallback should contain the config SmallModel")
+	}
+}
+
+func TestApply_KeylessPlaceholderNotDiscoverable(t *testing.T) {
+	tgt := setupPi(t)
+	te := config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint:     "http://127.0.0.1:1234/v1",
+			ProviderType: "openai",
+			Name:         "lmstudio",
+			Model:        "meta/muse-glimmer",
+		},
+	}
+	if err := tgt.Apply(te); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	dr, err := tgt.Discover()
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if dr.Provider.Endpoint != "http://127.0.0.1:1234/v1" {
+		t.Errorf("discovered endpoint = %q", dr.Provider.Endpoint)
+	}
+	if dr.Provider.APIKey != "" {
+		t.Errorf("placeholder apiKey should not be discoverable; got %q", dr.Provider.APIKey)
+	}
+	if dr.Provider.Model != "meta/muse-glimmer" {
+		t.Errorf("discovered model = %q", dr.Provider.Model)
 	}
 }
 

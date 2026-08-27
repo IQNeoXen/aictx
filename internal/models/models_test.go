@@ -97,6 +97,46 @@ func TestFetchModelIDs_FallbackToModels(t *testing.T) {
 	}
 }
 
+func TestFetchModelIDs_LMStudioV1EndpointFallsBackAndDedups(t *testing.T) {
+	seenFirst := false
+	seenFallback := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/v1/models":
+			seenFirst = true
+			w.WriteHeader(http.StatusNotFound)
+		case "/v1/models":
+			seenFallback = true
+			modelsHandler([]string{
+				"zeta-model",
+				"aws:claude-opus-4.8",
+				"claude-opus-4-8",
+				"claude-opus-4.8",
+				"alpha-model",
+				"zeta-model",
+			})(w, r)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	got, err := FetchModelIDs(srv.URL+"/v1", "", nil)
+	if err != nil {
+		t.Fatalf("FetchModelIDs: %v", err)
+	}
+	want := []string{"alpha-model", "claude-opus-4.8", "zeta-model"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if !seenFirst {
+		t.Error("expected initial /v1/v1/models request")
+	}
+	if !seenFallback {
+		t.Error("expected fallback /v1/models request")
+	}
+}
+
 func TestFetchModelIDs_BothFail(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

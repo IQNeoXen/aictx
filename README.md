@@ -286,6 +286,11 @@ aictx model              # pick a new primary model from the live list
 When stdout is not a terminal (piped), it prints the available models and reads
 your selection from stdin, defaulting to the current model on empty input.
 
+Switching a context (`aictx <context>`) does not fetch models or correct a
+stale configured model ID. Run `aictx model` after switching whenever the
+endpoint's available models may have changed or the context has no suitable
+default.
+
 > `aictx model` is not supported for Copilot contexts (managed via
 > `aictx copilot login`) or for native/OAuth contexts with no provider endpoint.
 
@@ -299,6 +304,12 @@ available). pi defaults to the model in your aictx config, and you can switch to
 any other model on the fly via `/model`. If the endpoint is slow or unreachable,
 the extension falls back (after a ~5s timeout) to the static `model` /
 `smallModel` entries from the config, so pi always starts.
+
+For keyless custom endpoints such as LM Studio, the generated extension includes
+a harmless placeholder `apiKey` (`"aictx-local"`). pi uses the presence of this
+value to treat the provider as configured and show its models in `/model`; the
+local endpoint ignores it. Real API keys are still read from the OS keychain and
+are never written to the YAML config.
 
 The wire protocol (`api`) is auto-detected **per model** so mixed-provider
 proxies work: models whose id (or upstream `litellm_params.model`) contains
@@ -342,6 +353,17 @@ contexts:
     targets:
       - id: pi-cli
 ```
+
+After switching to this context, select a model currently served by LM Studio:
+
+```bash
+aictx gemma4
+aictx model
+```
+
+This updates the configured default and regenerates the pi extension. It is
+especially important when `model` is omitted or no longer matches an available
+LM Studio model; `aictx gemma4` itself does not query or auto-correct model IDs.
 
 ## Shell Completion
 
