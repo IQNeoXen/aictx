@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"github.com/IQNeoXen/aictx/internal/claudeauth"
 	"github.com/IQNeoXen/aictx/internal/config"
 	"github.com/IQNeoXen/aictx/internal/copilot"
@@ -14,6 +12,8 @@ import (
 	"github.com/IQNeoXen/aictx/internal/target/claudevscode"
 	"github.com/IQNeoXen/aictx/internal/target/picli"
 	"github.com/spf13/cobra"
+	"os"
+	"os/exec"
 )
 
 var rootCmd = &cobra.Command{
@@ -79,7 +79,9 @@ func rootRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if picker.IsTerminal() {
-		selected, err := picker.Pick(cfg.ContextNames(), cfg.State.Current)
+		selected, err := picker.Pick(cfg.ContextNames(), cfg.State.Current,
+			picker.WithTitle("Switch Context"),
+			picker.WithSubtitle(fmt.Sprintf("Active: %s", cfg.State.Current)))
 		if err != nil {
 			return err
 		}
