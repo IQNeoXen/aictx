@@ -79,7 +79,10 @@ func TestRenderFrameBounded(t *testing.T) {
 	if strings.HasSuffix(frame, "\r\n") {
 		t.Fatal("frame has a trailing newline")
 	}
-	body := strings.TrimPrefix(frame, "\033[H\033[2J")
+	if strings.Contains(frame, "\033[2J") {
+		t.Fatal("frame clears the whole screen (flickers on every redraw)")
+	}
+	body := strings.TrimPrefix(frame, "\033[H")
 	body = strings.TrimSuffix(body, "\033[J")
 	if rows := strings.Count(body, "\r\n") + 1; rows > 8 {
 		t.Fatalf("rendered %d rows, terminal has 8", rows)

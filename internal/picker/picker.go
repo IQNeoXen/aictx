@@ -2,7 +2,9 @@ package picker
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -236,25 +238,17 @@ func Pick(items []string, current string, opts ...Option) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("enabling raw mode: %w", err)
 	}
-	if err := prepareInput(os.Stdin); err != nil {
-		_ = term.Restore(fd, oldState)
-		return "", fmt.Errorf("configuring picker input: %w", err)
-	}
 
 	var cleanupOnce sync.Once
 	cleanup := func() {
 		cleanupOnce.Do(func() {
 			fmt.Fprint(os.Stdout, "\033[?1049l\033[?25h")
-			restoreInput(os.Stdin)
 			_ = term.Restore(fd, oldState)
 		})
 	}
 	defer cleanup()
 	fmt.Fprint(os.Stdout, "\033[?1049h\033[H\033[2J\033[?25l")
 
-	inputPoll := time.NewTicker(10 * time.Millisecond)
-	defer inputPoll.Stop()
-	buf := make([]byte, 64)
 	resize := make(chan os.Signal, 1)
 	terminated := make(chan os.Signal, 1)
 	notifyResize(resize)
@@ -262,84 +256,83 @@ func Pick(items []string, current string, opts ...Option) (string, error) {
 	defer signal.Stop(resize)
 	defer signal.Stop(terminated)
 
-	decoder := &inputDecoder{}
 	windowStart := 0
-	visible, frame := renderFrame(items, cursor, windowStart, width, height, current, cfg)
-	windowStart = visible.Start
-	fmt.Fprint(os.Stdout, frame)
-	var escTimer *time.Timer
-	var escC <-chan time.Time
+	redraw := func() error {
+		if w, h, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+			width, height = w, h
+		}
+		vp, frame := renderFrame(items, cursor, windowStart, width, height, current, cfg)
+		windowStart = vp.Start
+		if _, err := fmt.Fprint(os.Stdout, frame); err != nil {
+			return fmt.Errorf("drawing picker: %w", err)
+		}
+		return nil
+	}
+	if err := redraw(); err != nil {
+		return "", err
+	}
+
+	decoder := &inputDecoder{}
+	buf := make([]byte, 64)
 	for {
 		select {
-		case <-inputPoll.C:
-			n, readErr := readInput(os.Stdin, buf)
-			if readErr != nil && !isWouldBlock(readErr) {
-				return "", fmt.Errorf("reading picker input: %w", readErr)
-			}
-			if n == 0 {
-				continue
-			}
-			var keys []inputKey
-			if n > 0 {
-				keys = decoder.feed(buf[:n])
-			}
-			if len(decoder.pending) > 0 && decoder.pending[0] == 0x1b {
-				if escTimer == nil {
-					escTimer = time.NewTimer(25 * time.Millisecond)
-					escC = escTimer.C
-				}
-			} else if escTimer != nil {
-				if !escTimer.Stop() {
-					select {
-					case <-escTimer.C:
-					default:
-					}
-				}
-				escTimer, escC = nil, nil
-			}
-			for _, key := range keys {
-				if key == keyEnter {
-					return items[cursor], nil
-				}
-				if key == keyCancel {
-					return "", nil
-				}
-				if key == keyUp {
-					cursor--
-				}
-				if key == keyDown {
-					cursor++
-				}
-				cursor = min(max(cursor, 0), len(items)-1)
-			}
-			width, height, _ = term.GetSize(int(os.Stdout.Fd()))
-			visible, frame = renderFrame(items, cursor, windowStart, width, height, current, cfg)
-			windowStart = visible.Start
-			fmt.Fprint(os.Stdout, frame)
-		case <-escC:
-			for _, key := range decoder.flushEscape() {
-				if key == keyCancel {
-					return "", nil
-				}
-			}
-			escTimer, escC = nil, nil
-			width, height, _ = term.GetSize(int(os.Stdout.Fd()))
-			visible, frame = renderFrame(items, cursor, windowStart, width, height, current, cfg)
-			windowStart = visible.Start
-			fmt.Fprint(os.Stdout, frame)
 		case <-resize:
-			width, height, sizeErr = term.GetSize(int(os.Stdout.Fd()))
-			if sizeErr == nil {
-				visible, frame = renderFrame(items, cursor, windowStart, width, height, current, cfg)
-				windowStart = visible.Start
-				fmt.Fprint(os.Stdout, frame)
+			if err := redraw(); err != nil {
+				return "", err
 			}
+			continue
 		case sig := <-terminated:
 			cleanup()
 			if sig == os.Interrupt {
 				return "", nil
 			}
 			return "", fmt.Errorf("terminated by %s", sig)
+		default:
+		}
+
+		// Short wait while an Esc is pending: bare Esc vs. start of an arrow key.
+		timeout := 100 * time.Millisecond
+		if len(decoder.pending) > 0 {
+			timeout = 25 * time.Millisecond
+		}
+		ready, err := waitInput(os.Stdin, timeout)
+		if err != nil {
+			return "", fmt.Errorf("reading picker input: %w", err)
+		}
+		var keys []inputKey
+		if ready {
+			n, err := os.Stdin.Read(buf)
+			if errors.Is(err, io.EOF) {
+				return "", nil
+			}
+			if err != nil {
+				return "", fmt.Errorf("reading picker input: %w", err)
+			}
+			keys = decoder.feed(buf[:n])
+			if !escLookahead {
+				keys = append(keys, decoder.flushEscape()...)
+			}
+		} else {
+			keys = decoder.flushEscape()
+		}
+
+		prev := cursor
+		for _, key := range keys {
+			switch key {
+			case keyEnter:
+				return items[cursor], nil
+			case keyCancel:
+				return "", nil
+			case keyUp:
+				cursor = max(cursor-1, 0)
+			case keyDown:
+				cursor = min(cursor+1, len(items)-1)
+			}
+		}
+		if cursor != prev {
+			if err := redraw(); err != nil {
+				return "", err
+			}
 		}
 	}
 }
@@ -409,7 +402,9 @@ func renderFrame(items []string, cursor, windowStart, width, height int, current
 		}
 		lines[selectedRow] = "\033[1;7m" + marker + sanitizeAndTruncate(items[cursor], max(0, width-2)) + "\033[0m"
 	}
-	return vp, "\033[H\033[2J" + strings.Join(lines, "\r\n") + "\033[J"
+	// Home + per-line erase instead of a full-screen clear avoids flicker. Erase
+	// before writing: erasing after a full-width line would eat its last cell.
+	return vp, "\033[H\033[2K" + strings.Join(lines, "\r\n\033[2K") + "\033[J"
 }
 
 func indicator(count int, above bool) string {
