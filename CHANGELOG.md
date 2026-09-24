@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.0 (2026-09-24)
+
+### Added
+
+- **`aictx key update [context]`** — rotate an existing static API key in place; defaults to the active context, prompts without echo in a terminal, or accepts `--api-key` for scripts
+- Active contexts refresh detected targets immediately without running the on-switch command or changing context selection; inactive contexts apply the replacement on the next switch
+
+### Security
+
+- API-key writes now fail closed if the OS keychain is unavailable instead of saving a plaintext fallback to `config.yaml`
+- The README clarifies that headers and target environment variables remain in YAML and should not contain secrets unless that storage is acceptable
+
 ## v0.3.0 (2026-07-10)
 
 ### Added
