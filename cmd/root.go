@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
 	"github.com/IQNeoXen/aictx/internal/claudeauth"
 	"github.com/IQNeoXen/aictx/internal/config"
 	"github.com/IQNeoXen/aictx/internal/copilot"
@@ -59,6 +60,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(copilotCmd)
 	rootCmd.AddCommand(modelCmd)
+	rootCmd.AddCommand(keyCmd)
 }
 
 func rootRun(cmd *cobra.Command, args []string) error {
@@ -154,80 +156,13 @@ func switchContext(cfg *config.Config, name string) error {
 		}
 	}
 
-	// Only apply to targets listed in this context
-	applied := 0
-	newAppliedEnvKeys := map[string][]string{}
-	for _, te := range ctx.Targets {
-		t := target.ByID(te.ID)
-		if t == nil {
-			fmt.Fprintf(os.Stderr, "  ? %s: unknown target\n", te.ID)
-			continue
-		}
-
-		// Copilot provider only supports pi-cli (OpenAI-compatible API format).
-		// Claude Code targets use the Anthropic protocol and are not compatible.
-		if ctx.Provider.ProviderType == "copilot" && te.ID != picli.ID {
-			fmt.Fprintf(os.Stderr, "  ⚠ %s: Copilot provider is not yet supported for this target (skipped)\n",
-				t.Name())
-			continue
-		}
-
-		if !t.Detect() {
-			fmt.Fprintf(os.Stderr, "  - %s: not installed\n", t.Name())
-			continue
-		}
-
-		// Construct an effective TargetEntry by merging context-level Provider/Options
-		// with per-target Env. For Copilot contexts, resolvedProvider contains the
-		// freshly-exchanged short-lived API token (ProviderType resolved to "openai").
-		effective := config.TargetEntry{
-			ID:            te.ID,
-			Provider:      resolvedProvider,
-			Options:       ctx.Options,
-			HasKeyringKey: ctx.HasKeyringKey,
-			Env:           te.Env,
-		}
-
-		// Inject previously-applied env keys so Apply() can remove stale
-		// entries before writing new ones.
-		if cfg.State.AppliedEnvKeys != nil {
-			if ct, ok := t.(*claudecli.Target); ok {
-				ct.PrevEnvKeys = cfg.State.AppliedEnvKeys[te.ID]
-			}
-			if vt, ok := t.(*claudevscode.Target); ok {
-				vt.PrevEnvKeys = cfg.State.AppliedEnvKeys[te.ID]
-			}
-		}
-
-		if err := t.Apply(effective); err != nil {
-			fmt.Fprintf(os.Stderr, "  ! %s: %v\n", t.Name(), err)
-			continue
-		}
-		applied++
-		fmt.Printf("  ✓ %s\n", t.Name())
-
-		// Track which env keys were applied for this target so the next
-		// switch can clean them up.
-		if te.ID == claudecli.ID || te.ID == claudevscode.ID {
-			keys := targetAppliedEnvKeys(effective)
-			if len(keys) > 0 {
-				newAppliedEnvKeys[te.ID] = keys
-			}
-		}
-	}
-
-	if applied == 0 {
+	result := applyContextTargets(cfg, ctx, resolvedProvider, ctx.Provider.ProviderType == "copilot")
+	if result.Applied == 0 {
 		return fmt.Errorf("no targets could be applied")
 	}
 
 	cfg.State.Previous = cfg.State.Current
 	cfg.State.Current = name
-	if cfg.State.AppliedEnvKeys == nil {
-		cfg.State.AppliedEnvKeys = map[string][]string{}
-	}
-	for k, v := range newAppliedEnvKeys {
-		cfg.State.AppliedEnvKeys[k] = v
-	}
 	if err := config.Save(cfg); err != nil {
 		return err
 	}
@@ -249,6 +184,72 @@ func switchContext(cfg *config.Config, name string) error {
 	}
 
 	return nil
+}
+
+// targetApplicationResult describes target outcomes without changing context selection.
+// Failed contains target names and errors suitable for user-facing reporting.
+type targetApplicationResult struct {
+	Applied int
+	Skipped []string
+	Failed  []string
+}
+
+// applyContextTargets applies a context to its detected targets. It does not alter
+// State.Current/Previous or execute Context.Command, so callers can safely reuse it
+// for non-switch operations such as key rotation. Successful Claude targets update
+// AppliedEnvKeys in memory; the caller is responsible for persisting the config.
+func applyContextTargets(cfg *config.Config, ctx *config.Context, provider config.Provider, copilotProvider bool) targetApplicationResult {
+	result := targetApplicationResult{}
+	newAppliedEnvKeys := map[string][]string{}
+	for _, te := range ctx.Targets {
+		t := target.ByID(te.ID)
+		if t == nil {
+			fmt.Fprintf(os.Stderr, "  ? %s: unknown target\n", te.ID)
+			result.Skipped = append(result.Skipped, te.ID)
+			continue
+		}
+		if copilotProvider && te.ID != picli.ID {
+			fmt.Fprintf(os.Stderr, "  ⚠ %s: Copilot provider is not yet supported for this target (skipped)\n", t.Name())
+			result.Skipped = append(result.Skipped, t.Name())
+			continue
+		}
+		if !t.Detect() {
+			fmt.Fprintf(os.Stderr, "  - %s: not installed\n", t.Name())
+			result.Skipped = append(result.Skipped, t.Name())
+			continue
+		}
+
+		effective := config.TargetEntry{ID: te.ID, Provider: provider, Options: ctx.Options, HasKeyringKey: ctx.HasKeyringKey, Env: te.Env}
+		if cfg.State.AppliedEnvKeys != nil {
+			if ct, ok := t.(*claudecli.Target); ok {
+				ct.PrevEnvKeys = cfg.State.AppliedEnvKeys[te.ID]
+			}
+			if vt, ok := t.(*claudevscode.Target); ok {
+				vt.PrevEnvKeys = cfg.State.AppliedEnvKeys[te.ID]
+			}
+		}
+		if err := t.Apply(effective); err != nil {
+			fmt.Fprintf(os.Stderr, "  ! %s: %v\n", t.Name(), err)
+			result.Failed = append(result.Failed, fmt.Sprintf("%s: %v", t.Name(), err))
+			continue
+		}
+		result.Applied++
+		fmt.Printf("  ✓ %s\n", t.Name())
+		if te.ID == claudecli.ID || te.ID == claudevscode.ID {
+			if keys := targetAppliedEnvKeys(effective); len(keys) > 0 {
+				newAppliedEnvKeys[te.ID] = keys
+			}
+		}
+	}
+	if len(newAppliedEnvKeys) > 0 {
+		if cfg.State.AppliedEnvKeys == nil {
+			cfg.State.AppliedEnvKeys = map[string][]string{}
+		}
+		for id, keys := range newAppliedEnvKeys {
+			cfg.State.AppliedEnvKeys[id] = keys
+		}
+	}
+	return result
 }
 
 // targetAppliedEnvKeys returns the set of env keys that Apply() will write for a

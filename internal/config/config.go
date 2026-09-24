@@ -194,9 +194,7 @@ func Save(cfg *Config) error {
 		ctx := &disk.Contexts[ci]
 		if ctx.Provider.APIKey != "" {
 			if kerr := keyring.Set(ctx.Name, ctx.Provider.APIKey); kerr != nil {
-				fmt.Fprintf(os.Stderr, "aictx: warning: could not store API key in keychain for %s: %v\n", ctx.Name, kerr)
-				// Fall through: key stays in YAML to avoid data loss.
-				continue
+				return fmt.Errorf("storing API key in keychain for %s: %w", ctx.Name, kerr)
 			}
 			ctx.HasKeyringKey = true
 			ctx.Provider.APIKey = "" // scrub from disk representation

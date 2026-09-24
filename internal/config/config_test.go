@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -403,6 +404,36 @@ func TestSaveAPIKeyScrubbed(t *testing.T) {
 	// The in-memory config must still have the key for Apply().
 	if cfg.Contexts[0].Provider.APIKey != "sk-secret" {
 		t.Error("Save() cleared APIKey from caller's in-memory config")
+	}
+}
+
+func TestSaveAPIKeyKeyringFailureLeavesYAMLUntouched(t *testing.T) {
+	setupConfigDir(t)
+
+	original := &Config{Contexts: []Context{{Name: "ctx", Provider: Provider{Model: "original", APIKey: "old-secret"}}}}
+	if err := Save(original); err != nil {
+		t.Fatalf("initial Save: %v", err)
+	}
+	before, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatalf("reading initial YAML: %v", err)
+	}
+
+	zalkeyring.MockInitWithError(errors.New("keychain unavailable"))
+	updated := &Config{Contexts: []Context{{Name: "ctx", Provider: Provider{APIKey: "replacement-secret", Model: "updated"}}}}
+	if err := Save(updated); err == nil {
+		t.Fatal("Save() error = nil, want keyring failure")
+	}
+
+	after, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatalf("reading YAML after failed Save: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("YAML changed after failed keyring save:\n got %q\nwant %q", after, before)
+	}
+	if contains(after, "replacement-secret") || contains(after, "old-secret") {
+		t.Error("API key found in YAML after failed Save")
 	}
 }
 
