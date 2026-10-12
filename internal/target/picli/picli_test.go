@@ -155,7 +155,7 @@ func TestApply_KeylessCustomEndpointUsesPlaceholderAPIKey(t *testing.T) {
 	if strings.Contains(ext, "authHeader: true") {
 		t.Errorf("keyless placeholder should not emit authHeader; got:\n%s", ext)
 	}
-	if !strings.Contains(ext, `const models = await aictxFetchModels("http://127.0.0.1:1234/v1", "", providerHeaders, "openai-completions", staticModels);`) {
+	if !strings.Contains(ext, `const discovery = await aictxFetchModels("http://127.0.0.1:1234/v1", "", providerHeaders, "openai-completions", staticModels);`) {
 		t.Errorf("dynamic model fetch should keep empty fetch auth key for keyless endpoint; got:\n%s", ext)
 	}
 
@@ -594,6 +594,71 @@ func TestBuildExtension_ResponsesModeIncluded(t *testing.T) {
 	}
 	if !strings.Contains(ext, `mode === "chat" || mode === "responses" || mode == null`) {
 		t.Errorf("extension /model/info filter should accept chat, responses, and missing mode; got:\n%s", ext)
+	}
+}
+
+func TestBuildExtension_DiscoveryFailureBannerWiring(t *testing.T) {
+	tgt := setupPi(t)
+	ext := tgt.buildExtension(config.TargetEntry{
+		Provider: config.Provider{
+			Endpoint: "https://proxy.example.com",
+			APIKey:   "sk-test-secret",
+			Model:    "fallback-model",
+		},
+	})
+	for _, want := range []string{
+		"Promise<{ models: any[]; failure?: string }>",
+		"return { models: staticModels, failure: sanitizeFailure(chooseFailure()) }",
+		"return { models: deduped }",
+		"const paths = [\"/model/info\", \"/v1/models\", \"/models\"]",
+		"const auth = errors.find((e) => e.status === 401 || e.status === 403)",
+		"const specific = errors.find((e) => e.status !== undefined && e.status !== 404 && e.detail)",
+		"const network = errors.find((e) => e.network)",
+		"const notFound = errors.find((e) => e.status === 404)",
+		"usefulDetail(detail) ? detail : undefined",
+		"not found[.!]?|404\\s+not found[.!]?|http\\s+\\d{3}(?:\\s*[:\\-—]\\s*not found)?[.!]?",
+		"safe.replace(/\\u001B\\][^\\u0007]*",
+		"safe.replace(/[\\x00-\\x1F",
+		"typeof id !== \"string\" || !id.trim()",
+		"typeof m?.id === \"string\" && m.id.trim()",
+		"no usable models were returned",
+		"text.split(authKey).join(\"[REDACTED]\")",
+		"safe.length > 240",
+		"ctx.mode !== \"tui\"",
+		"placement: \"aboveEditor\"",
+		"Press any key to dismiss",
+		"ctx.ui.onTerminalInput",
+		"return undefined",
+		"session_before_switch",
+		"session_shutdown",
+		"const models = discovery.models",
+		"if (!discovery.failure || ctx.mode !== \"tui\"",
+		"if (deduped.length) return { models: deduped }",
+		"models,",
+		"clearBanner?.();",
+		"unsubscribe?.();",
+	} {
+		if !strings.Contains(ext, want) {
+			t.Errorf("generated extension missing %q", want)
+		}
+	}
+	if !strings.Contains(ext, `const staticModels = [`) || !strings.Contains(ext, `id: "fallback-model"`) {
+		t.Error("discovery failure path must preserve configured static model fallback")
+	}
+	if !strings.Contains(ext, `const discovery = await aictxFetchModels("https://proxy.example.com", "sk-test-secret"`) {
+		t.Error("discovery should retain the configured API key for redaction")
+	}
+}
+
+func TestBuildExtension_CopilotHasNoDiscoveryBanner(t *testing.T) {
+	tgt := setupPi(t)
+	ext := tgt.buildExtension(config.TargetEntry{Provider: config.Provider{
+		Endpoint:     "https://api.githubcopilot.com",
+		ProviderType: "openai",
+		Model:        "gpt-4o",
+	}})
+	if strings.Contains(ext, "aictxFetchModels") || strings.Contains(ext, "session_start") {
+		t.Errorf("Copilot extension must remain outside model-discovery warning path; got:\n%s", ext)
 	}
 }
 

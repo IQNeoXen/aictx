@@ -324,9 +324,12 @@ for non-Copilot contexts is an **async factory** that queries the provider
 endpoint for **all** available models at pi startup and registers each one with
 pi (deriving cost, context window, and capabilities from `/model/info` where
 available). pi defaults to the model in your aictx config, and you can switch to
-any other model on the fly via `/model`. If the endpoint is slow or unreachable,
-the extension falls back (after a ~5s timeout) to the static `model` /
-`smallModel` entries from the config, so pi always starts.
+any other model on the fly via `/model`. If discovery fails or all supported
+endpoints return empty/unusable catalogs, the extension falls back (after a ~5s
+timeout) to the static `model` / `smallModel` entries from the config, so pi
+still starts and keeps those models registered. In interactive pi, a red warning
+above the editor shows the most useful available error detail; press any key to
+dismiss it, and that key continues to work normally.
 
 For keyless custom endpoints such as LM Studio, the generated extension includes
 a harmless placeholder `apiKey` (`"aictx-local"`). pi uses the presence of this

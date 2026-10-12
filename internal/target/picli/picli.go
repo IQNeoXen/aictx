@@ -233,11 +233,11 @@ func (t *Target) buildExtension(te config.TargetEntry) string {
 	// Provider headers.
 	sb.WriteString(fmt.Sprintf("  const providerHeaders = %s;\n", headers.String()))
 
-	// Fetch the live model list (falls back to staticModels on any failure).
+	// Fetch live models and keep discovery failure separate from the static fallback.
 	endpointLit := jsonString(te.Provider.Endpoint)
 	apiKeyLit := jsonString(te.Provider.APIKey)
-	sb.WriteString(fmt.Sprintf("  const models = await aictxFetchModels(%s, %s, providerHeaders, %s, staticModels);\n\n",
-		endpointLit, apiKeyLit, jsonString(apiType)))
+	sb.WriteString(fmt.Sprintf("  const discovery = await aictxFetchModels(%s, %s, providerHeaders, %s, staticModels);\n", endpointLit, apiKeyLit, jsonString(apiType)))
+	sb.WriteString("  const models = discovery.models;\n\n")
 
 	sb.WriteString(fmt.Sprintf("  pi.registerProvider(%s, {\n", jsonString(providerName)))
 	if te.Provider.Endpoint != "" {
@@ -253,13 +253,40 @@ func (t *Target) buildExtension(te config.TargetEntry) string {
 		sb.WriteString("    headers: providerHeaders,\n")
 	}
 	sb.WriteString("    models,\n")
-	sb.WriteString("  });\n}\n")
+	sb.WriteString("  });\n\n")
+	sb.WriteString(`  let clearBanner: (() => void) | undefined;
+  pi.on("session_start", (_event, ctx) => {
+    clearBanner?.();
+    clearBanner = undefined;
+    if (!discovery.failure || ctx.mode !== "tui" || !ctx.ui?.setWidget || !ctx.ui?.onTerminalInput) return;
+
+    const widgetKey = "aictx-model-discovery-error";
+    let unsubscribe: (() => void) | undefined;
+    const clear = () => {
+      ctx.ui.setWidget(widgetKey, undefined);
+      unsubscribe?.();
+      unsubscribe = undefined;
+    };
+    clearBanner = clear;
+    ctx.ui.setWidget(widgetKey, [ctx.ui.theme.fg("error", "Model discovery failed: " + discovery.failure + " (Press any key to dismiss)")], { placement: "aboveEditor" });
+    unsubscribe = ctx.ui.onTerminalInput(() => {
+      clear();
+      clearBanner = undefined;
+      return undefined;
+    });
+  });
+  pi.on("session_before_switch", () => { clearBanner?.(); clearBanner = undefined; });
+  pi.on("session_shutdown", () => { clearBanner?.(); clearBanner = undefined; });
+}
+`)
 	return sb.String()
 }
 
 // dynamicModelsHelperJS is the embedded TypeScript helper that fetches the live
 // model catalog from the provider endpoint at pi startup, maps it to pi model
-// definitions, and dedups it. The dedup rule MUST stay in sync with
+// definitions, and dedups it. Discovery errors are returned separately from the static
+// fallback list so the extension can display them without blocking provider registration.
+// The dedup rule MUST stay in sync with
 // internal/models.Dedup (strip "vendor:" prefix, treat dashed versions as
 // dotted, prefer the dotted unprefixed representative). On any failure it
 // returns the caller-supplied static fallback list so pi always starts.
@@ -316,19 +343,67 @@ async function aictxFetchModels(
   providerHeaders: Record<string, string>,
   apiFormat: string,
   staticModels: any[],
-): Promise<any[]> {
+): Promise<{ models: any[]; failure?: string }> {
   const base = endpoint.replace(/\/$/, "");
   const headers: Record<string, string> = { ...providerHeaders };
   if (authKey) headers["Authorization"] = "Bearer " + authKey;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
+  const errors: Array<{ path: string; status?: number; detail?: string; network?: string }> = [];
+  const paths = ["/model/info", "/v1/models", "/models"];
+  const usefulDetail = (text: string): boolean => !!text && !/^(not found[.!]?|404\s+not found[.!]?|http\s+\d{3}(?:\s*[:\-—]\s*not found)?[.!]?)$/i.test(text.trim());
+  const errorText = (payload: any): string => {
+    if (typeof payload === "string") return payload.trim();
+    const candidates = [payload?.error?.message, payload?.error?.detail, payload?.message, payload?.detail, payload?.error];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+      if (candidate && typeof candidate === "object") {
+        const nested = candidate.message || candidate.detail;
+        if (typeof nested === "string" && nested.trim()) return nested.trim();
+      }
+    }
+    return "";
+  };
+  const recordHTTPError = async (path: string, res: Response) => {
+    let detail = "";
+    try {
+      const body = await res.text();
+      try { detail = errorText(JSON.parse(body)); } catch { detail = errorText(body); }
+    } catch { /* ignore unreadable body */ }
+    errors.push({ path, status: res.status, detail: usefulDetail(detail) ? detail : undefined });
+  };
+  const recordNetworkError = (path: string, error: any) => {
+    const detail = error?.name === "AbortError" ? "request timed out" : (error?.message || "network request failed");
+    errors.push({ path, network: detail });
+  };
+  const chooseFailure = (): string => {
+    const specific = errors.find((e) => e.status !== undefined && e.status !== 404 && e.detail);
+    if (specific?.detail) return "HTTP " + specific.status + " — " + specific.detail;
+    const auth = errors.find((e) => e.status === 401 || e.status === 403);
+    if (auth) return "HTTP " + auth.status;
+    const status = errors.find((e) => e.status !== undefined && e.status !== 404);
+    if (status) return "HTTP " + status.status;
+    const network = errors.find((e) => e.network);
+    if (network) return network.path + ": " + network.network;
+    const notFound = errors.find((e) => e.status === 404);
+    if (notFound) return "HTTP 404" + (notFound.detail ? " — " + notFound.detail : "");
+    return "no usable models were returned";
+  };
+  const sanitizeFailure = (text: string): string => {
+    let safe = authKey ? text.split(authKey).join("[REDACTED]") : text;
+    safe = safe.replace(/\u001B\][^\u0007]*(?:\u0007|\u001B\\)|\u001B\[[0-?]*[ -/]*[@-~]|\u009B[0-?]*[ -/]*[@-~]/g, "");
+    safe = safe.replace(/[\x00-\x1F\x7F-\x9F]/g, " ").trim();
+    return safe.length > 240 ? safe.slice(0, 237) + "..." : safe;
+  };
   try {
     // Preferred: /model/info carries cost + capability metadata.
     try {
-      const res = await fetch(base + "/model/info", { headers, signal: controller.signal });
-      if (res.ok) {
+      const res = await fetch(base + paths[0], { headers, signal: controller.signal });
+      if (!res.ok) { await recordHTTPError(paths[0], res); }
+      else {
         const payload: any = await res.json();
-        const mapped = (payload.data || [])
+        const mapped = (Array.isArray(payload?.data) ? payload.data : [])
+          .filter((m: any) => m && typeof m === "object")
           .filter((m: any) => {
             const mode = m.model_info && m.model_info.mode;
             return mode === "chat" || mode === "responses" || mode == null;
@@ -336,6 +411,7 @@ async function aictxFetchModels(
           .map((m: any) => {
             const info = m.model_info || {};
             const id = m.model_name;
+            if (typeof id !== "string" || !id.trim()) return undefined;
             return {
               id,
               name: id,
@@ -351,21 +427,22 @@ async function aictxFetchModels(
               contextWindow: info.max_input_tokens || 200000,
               maxTokens: info.max_output_tokens || info.max_tokens || 32000,
             };
-          });
+          })
+          .filter((m: any) => m !== undefined);
         const deduped = aictxDedup(mapped);
-        if (deduped.length) return deduped;
+        if (deduped.length) return { models: deduped };
       }
-    } catch {
-      // fall through to OpenAI-style endpoints
+    } catch (error) {
+      if (error?.name !== "SyntaxError") recordNetworkError(paths[0], error);
     }
 
     // Fallback: OpenAI-style /v1/models then /models (ids only, cost 0).
-    for (const path of ["/v1/models", "/models"]) {
+    for (const path of paths.slice(1)) {
       try {
         const r = await fetch(base + path, { headers, signal: controller.signal });
-        if (!r.ok) continue;
+        if (!r.ok) { await recordHTTPError(path, r); continue; }
         const p: any = await r.json();
-        const mapped = (p.data || []).map((m: any) => ({
+        const mapped = (Array.isArray(p?.data) ? p.data : []).filter((m: any) => typeof m?.id === "string" && m.id.trim()).map((m: any) => ({
           id: m.id,
           name: m.id,
           api: aictxApiForModel(m.id, "", apiFormat),
@@ -376,15 +453,15 @@ async function aictxFetchModels(
           maxTokens: m.max_output_tokens || 32000,
         }));
         const deduped = aictxDedup(mapped);
-        if (deduped.length) return deduped;
-      } catch {
-        // try next path
+        if (deduped.length) return { models: deduped };
+      } catch (error) {
+        if (error?.name !== "SyntaxError") recordNetworkError(path, error);
       }
     }
   } finally {
     clearTimeout(timer);
   }
-  return staticModels;
+  return { models: staticModels, failure: sanitizeFailure(chooseFailure()) };
 }
 `
 
