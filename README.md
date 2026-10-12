@@ -104,24 +104,25 @@ aictx
 
 ## Commands
 
-| Command                    | Description                                              |
-| -------------------------- | -------------------------------------------------------- |
-| `aictx`                    | Pick context interactively or list when piped            |
-| `aictx <name>`             | Switch to a context                                      |
-| `aictx -`                  | Switch back to the previous context                      |
-| `aictx list`               | List all contexts                                        |
-| `aictx add <name>`         | Add a new context (interactive or with flags)            |
-| `aictx copy <src> <name>`  | Copy a context, optionally overriding settings           |
-| `aictx rename <old> <new>` | Rename a context (alias: `mv`)                           |
-| `aictx rm <name>`          | Remove a context                                         |
-| `aictx show [name]`        | Show context details (defaults to current)               |
-| `aictx current`            | Print the current context name                           |
-| `aictx discover`           | Detect config from installed tools and save as a context |
-| `aictx model`              | Pick the primary model for the active context (live list) |
-| `aictx completion <shell>` | Print a shell completion script                          |
-| `aictx copilot login`      | Authenticate with GitHub Copilot via Device Flow         |
-| `aictx copilot status`     | Show GitHub Copilot login status                         |
-| `aictx copilot logout`     | Remove stored Copilot credentials                        |
+| Command                      | Description                                              |
+| ---------------------------- | -------------------------------------------------------- |
+| `aictx`                      | Pick context interactively or list when piped            |
+| `aictx <name>`               | Switch to a context                                      |
+| `aictx -`                    | Switch back to the previous context                      |
+| `aictx list`                 | List all contexts                                        |
+| `aictx add <name>`           | Add a new context (interactive or with flags)            |
+| `aictx copy <src> <name>`    | Copy a context, optionally overriding settings           |
+| `aictx key update [context]` | Replace a static API key (defaults to active context)    |
+| `aictx rename <old> <new>`   | Rename a context (alias: `mv`)                           |
+| `aictx rm <name>`            | Remove a context                                         |
+| `aictx show [name]`          | Show context details (defaults to current)               |
+| `aictx current`              | Print the current context name                           |
+| `aictx discover`             | Detect config from installed tools and save as a context |
+| `aictx model`                | Pick the primary model for the active context (live list) |
+| `aictx completion <shell>`   | Print a shell completion script                          |
+| `aictx copilot login`        | Authenticate with GitHub Copilot via Device Flow         |
+| `aictx copilot status`       | Show GitHub Copilot login status                         |
+| `aictx copilot logout`       | Remove stored Copilot credentials                        |
 
 ## Switching Contexts
 
@@ -251,6 +252,28 @@ aictx copy mycontext another --api-key sk-xxx --target claude-code-cli
 
 The `--env` and `--header` flags **merge** into the inherited values rather than replacing them.
 API keys are copied to the OS keychain under the new context name automatically.
+Copying creates a **new context**; if you only rolled the key for an existing context, use [`aictx key update`](#updating-an-api-key) instead.
+
+## Updating an API Key
+
+Replace the static API key of an existing context without copying or recreating it:
+
+```bash
+aictx key update           # active context; prompts in a terminal without echoing
+aictx key update work      # named context; also prompts without echoing
+```
+
+For scripts, supply the replacement explicitly:
+
+```bash
+aictx key update work --api-key sk-replacement
+```
+
+**Warning:** `--api-key` can expose the key in shell history and process listings. Prefer the no-echo terminal prompt for interactive use. An empty key is rejected; prompting requires a terminal.
+
+The replacement is saved to the OS keychain before any targets are refreshed. For the **active** context, aictx reapplies detected configured targets immediately, without changing the current/previous context or running its on-switch command. An **inactive** context is only updated in storage; run `aictx work` when you want to apply it. If a target refresh fails, the replacement remains saved; retry with `aictx <context>` after fixing the target issue.
+
+This command is for contexts that already use a **static API key**, including direct Anthropic contexts without a custom endpoint. Claude OAuth, GitHub Copilot, and intentionally keyless/native contexts use their own authentication flows; `key update` does not convert them to static-key mode.
 
 ## Renaming a Context
 
@@ -381,11 +404,11 @@ aictx completion zsh > "${fpath[1]}/_aictx"
 aictx completion powershell >> $PROFILE
 ```
 
-Tab completion works for context names on `aictx`, `aictx show`, and `aictx rm`.
+Tab completion works for context names on `aictx`, `aictx show`, `aictx rm`, and `aictx key update`.
 
 ## Security
 
-API keys are stored in the OS keychain — never in plain text on disk:
+API keys are stored in the OS keychain, not in `~/.config/aictx/config.yaml` (provided the system keychain is available):
 
 | Platform | Storage                    |
 | -------- | -------------------------- |
@@ -393,7 +416,7 @@ API keys are stored in the OS keychain — never in plain text on disk:
 | Linux    | libsecret / GNOME Keyring  |
 | Windows  | Windows Credential Manager |
 
-The config file (`~/.config/aictx/config.yaml`) stores only metadata: context names, endpoints, models, and options.
+The config file (`~/.config/aictx/config.yaml`) stores context metadata such as names, endpoints, models, options, headers, and target `env` values. **Headers and target `env` values are persisted in YAML**; do not put secrets there unless you accept that storage. The OS keychain protects API keys, not arbitrary context metadata. Target applications may write credentials to target-specific files as required by those tools.
 
 ## GitHub Copilot
 
@@ -480,39 +503,30 @@ state:
 contexts:
   - name: work
     description: "LiteLLM proxy for work"
+    provider:
+      endpoint: https://proxy.example.com
+      model: claude-opus-4-6
+      smallModel: claude-haiku-4-5
+      headers:
+        X-Team-ID: eng
+    options:
+      alwaysThinking: true
+      disableTelemetry: true
+    hasKeyringKey: true
     targets:
       - id: claude-code-cli
-        provider:
-          endpoint: https://proxy.example.com
-          model: claude-opus-4-6
-          smallModel: claude-haiku-4-5
-          headers:
-            X-Proxy-Auth: token123
-            X-Team-ID: eng
-        options:
-          alwaysThinking: true
-          disableTelemetry: true
         env:
           OPENAI_API_VERSION: "2024-02-01"
-        hasKeyringKey: true
-
       - id: claude-code-vscode
-        provider:
-          endpoint: https://proxy.example.com
-          model: claude-sonnet-4-6
-        options:
-          alwaysThinking: true
-        hasKeyringKey: true
 
   - name: personal
     description: "Personal Claude subscription (OAuth)"
+    options:
+      alwaysThinking: true
+    hasOAuthKey: true
     targets:
       - id: claude-code-cli
-        options:
-          alwaysThinking: true
       - id: claude-code-vscode
-        options:
-          alwaysThinking: true
 ```
 
 An empty provider (no endpoint/apiKey) means native auth / OAuth.
