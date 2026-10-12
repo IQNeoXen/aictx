@@ -169,8 +169,7 @@ foundDefault:
 	// Model selection.
 	var selectedModel string
 	if picker.IsTerminal() {
-		fmt.Println("Select default model:")
-		selected, err := picker.Pick(modelIDs, defaultModel)
+		selected, err := picker.Pick(modelIDs, defaultModel, picker.WithTitle("Select GitHub Copilot Model"))
 		if err != nil {
 			return err
 		}
@@ -194,8 +193,7 @@ foundDefault:
 	var selectedSmallModel string
 	smallOptions := append([]string{"(none)"}, modelIDs...)
 	if picker.IsTerminal() {
-		fmt.Println("Select small model (leave empty to skip):")
-		selected, err := picker.Pick(smallOptions, "(none)")
+		selected, err := picker.Pick(smallOptions, "(none)", picker.WithTitle("Select Small Model (Optional)"))
 		if err != nil {
 			return err
 		}

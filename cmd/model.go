@@ -59,8 +59,9 @@ func modelRun(cmd *cobra.Command, args []string) error {
 
 	var selected string
 	if picker.IsTerminal() {
-		fmt.Printf("Select model for context %s:\n", ctx.Name)
-		sel, err := picker.Pick(ids, ctx.Provider.Model)
+		sel, err := picker.Pick(ids, ctx.Provider.Model,
+			picker.WithTitle(fmt.Sprintf("Select model (%d available)", len(ids))),
+			picker.WithSubtitle("Context: "+ctx.Name))
 		if err != nil {
 			return err
 		}

@@ -81,7 +81,9 @@ func rootRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if picker.IsTerminal() {
-		selected, err := picker.Pick(cfg.ContextNames(), cfg.State.Current)
+		selected, err := picker.Pick(cfg.ContextNames(), cfg.State.Current,
+			picker.WithTitle("Switch Context"),
+			picker.WithSubtitle(fmt.Sprintf("Active: %s", cfg.State.Current)))
 		if err != nil {
 			return err
 		}
