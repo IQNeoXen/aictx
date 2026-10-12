@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.0 (2026-10-12)
+
+### Added
+
+- **pi model-discovery warnings** — when live model discovery fails or returns no usable models, pi keeps the configured static fallback models and shows a dismissible warning with the most useful available error detail
+
+### Fixed
+
+- **Interactive picker rendering and viewport handling** — model and Copilot pickers now stay within the terminal viewport, scroll correctly, and avoid truncated frames and excessive redraws
+
 ## v0.4.0 (2026-09-24)
 
 ### Added
